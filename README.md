@@ -49,7 +49,7 @@ sequenceDiagram
     P->>M: GET /premium + X-PAYMENT (depositAddress)
     M->>F: /verify
     F->>O: GET /v0/status
-    Note over F,O: match the quote's recorded terms:<br/>recipient, destinationAsset,<br/>EXACT_OUTPUT amount; require SUCCESS
+    Note over F,O: match the quote's recorded terms:<br/>recipient, destinationAsset,<br/>EXACT_OUTPUT amount, then require SUCCESS
     F-->>M: valid
     M->>F: /settle
     F->>O: poll to terminal, re-match terms
