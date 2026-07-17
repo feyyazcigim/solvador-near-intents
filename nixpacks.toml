@@ -1,0 +1,14 @@
+# Deploys examples/near-intent-settlement from the monorepo ROOT. The
+# @solvador/* packages are not on the npm registry; they only resolve as
+# workspaces, so `npm install` must run here, not inside the example folder.
+
+[variables]
+# tsx/vite are devDependencies and the app runs from TS source; keep them.
+NPM_CONFIG_PRODUCTION = "false"
+
+[phases.build]
+# web/dist is gitignored; build the paywall bundle the server serves.
+cmds = ["npm run build:web -w @solvador/near-intent-settlement"]
+
+[start]
+cmd = "npm run demo"
