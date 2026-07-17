@@ -20,77 +20,66 @@ Three properties do the heavy lifting:
 
 Money plane (one transfer, any wallet):
 
-```
-  payer wallet                          1Click                              merchant
-  (e.g. Base USDC)
-       │
-       │  send amountIn to the
-       │  one-time deposit address
-       ▼
-  deposit address  ───────►  detect ► swap/bridge ► deliver  ───────►  payTo receives EXACTLY
-  (origin chain)             (~35 s measured)                          amount : asset, directly
-                                │
-                                └── late / short / failed ──► auto-refund to refundTo
+```mermaid
+flowchart LR
+    W["payer wallet<br/>e.g. Base USDC"] -->|"one plain transfer<br/>of amountIn"| D["one-time deposit address<br/>origin chain"]
+    D --> O["1Click<br/>detect, swap/bridge, deliver<br/>~35 s measured"]
+    O -->|"EXACTLY amount : asset,<br/>delivered direct"| M["merchant payTo"]
+    O -.->|"late / short / failed"| R["auto-refund to refundTo"]
 ```
 
 Control plane (x402), end to end:
 
-```
-  payer                    merchant server              Solvador facilitator                1Click
-  ─────                    ───────────────              ────────────────────                ──────
-    │ 1. GET /premium ────────►│
-    │◄──── 402 + accepts[] ────│      (scheme, amount, asset, payTo; extra.quotePath
-    │                          │       discovered from the facilitator's /supported)
-    │
-    │ 2. quote {refundTo, originAsset} ──────────────────────►│── POST /v0/quote ────────────►│
-    │◄──── { depositAddress, amountIn, deadline, signature } ─│◄── EXACT_OUTPUT quote ────────│
-    │
-    │ 3. one plain transfer of amountIn to depositAddress          (on the origin chain)
-    │
-    │ 4. (usually) poll status to SUCCESS ────────────────────│── GET /v0/status ────────────►│
-    │
-    │ 5. GET /premium + X-PAYMENT { depositAddress } ────►│
-    │                          │ 6. /verify ─────────────►│── GET /v0/status ────────────────►│
-    │                          │                          │   match terms, require SUCCESS
-    │                          │ 7. /settle ─────────────►│── poll to terminal, re-match ────►│
-    │                          │◄── oneclick-signed-status receipt
-    │◄──── 200 + content ──────│
-    │                          │ 8. any time later: verifyOneClickReceipt(receipt)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant P as payer
+    participant M as merchant server
+    participant F as Solvador facilitator
+    participant O as 1Click
+
+    P->>M: GET /premium
+    M-->>P: 402 + accepts[] (amount, asset, payTo, extra.quotePath)
+    P->>F: GET /schemes/multichain-exact/quote (refundTo, originAsset)
+    F->>O: POST /v0/quote (EXACT_OUTPUT, recipient = payTo)
+    O-->>F: depositAddress, amountIn, deadline, signature
+    F-->>P: quote
+    Note over P: one plain transfer of amountIn<br/>to depositAddress, on the origin chain
+    P->>O: (usually) poll GET /v0/status until SUCCESS
+    P->>M: GET /premium + X-PAYMENT (depositAddress)
+    M->>F: /verify
+    F->>O: GET /v0/status
+    Note over F,O: match the quote's recorded terms:<br/>recipient, destinationAsset,<br/>EXACT_OUTPUT amount; require SUCCESS
+    F-->>M: valid
+    M->>F: /settle
+    F->>O: poll to terminal, re-match terms
+    F-->>M: oneclick-signed-status receipt
+    M-->>P: 200 + content
+    Note over M: any time later:<br/>verifyOneClickReceipt(receipt)
 ```
 
-Steps 2 to 4 are the payer application's business; the scheme does not care how the deposit came to exist. Step 5 is the only x402-specific thing the payer does, and it is one JSON field. The payer may include `originTxHash` to let the facilitator nudge 1Click's deposit detection (`POST /v0/deposit/submit`), and `depositMemo` for MEMO-mode chains.
+The quote, the transfer, and the status poll are the payer application's business; the scheme does not care how the deposit came to exist. Presenting `{ depositAddress }` is the only x402-specific thing the payer does, and it is one JSON field. The payer may include `originTxHash` to let the facilitator nudge 1Click's deposit detection (`POST /v0/deposit/submit`), and `depositMemo` for MEMO-mode chains.
 
 ## Architecture
 
-```
-        payer's app                 merchant's server              Solvador facilitator
-  ┌───────────────────────┐   ┌───────────────────────┐   ┌──────────────────────────────────┐
-  │ @solvador/            │   │ @solvador/            │   │ @solvador/                       │
-  │ x402-near-intents-    │   │ near-receipt          │   │ near-intents-facilitator         │
-  │ client                │   │                       │   │                                  │
-  │                       │   │ verifyOneClick-       │   │ MultichainExactScheme            │
-  │ MultichainExact-      │   │ Receipt: re-check     │   │  · verify(): status + terms      │
-  │ ClientScheme:         │   │ the signed status,    │   │  · settle(): poll, receipt,      │
-  │ formats the deposit   │   │ terminal-success,     │   │    idempotency ledger            │
-  │ reference into the    │   │ 1Click signature      │   │  · GET  …/quote  (open)          │
-  │ x402 payload          │   │                       │   │  · POST …/fund   (sponsored,     │
-  │                       │   │                       │   │    optional EIP-3009 broadcast)  │
-  └───────────┬───────────┘   └───────────┬───────────┘   └───────────────┬──────────────────┘
-              │                           │                               │
-              └───────────────────────────┼───────────────────────────────┘
-                                          ▼
-                     ┌─────────────────────────────────────────────┐
-                     │ @solvador/near-intents-core                 │
-                     │  oneclick   1Click REST client              │
-                     │             (quote, status, submit, auth)   │
-                     │  eip3009    transferWithAuthorization       │
-                     │             build / recover, omft parsing   │
-                     │  receipt    oneclick-signed-status type     │
-                     │  tokens     /v0/tokens cache, amount math   │
-                     └──────────────────────┬──────────────────────┘
-                                            │ HTTPS
-                                            ▼
-                                  1Click (chaindefuser.com)
+```mermaid
+flowchart TB
+    subgraph PA["payer's app"]
+        CL["<b>@solvador/x402-near-intents-client</b><br/>MultichainExactClientScheme:<br/>formats the deposit reference<br/>into the x402 payload"]
+    end
+    subgraph ME["merchant's server"]
+        RC["<b>@solvador/near-receipt</b><br/>verifyOneClickReceipt:<br/>re-check the signed status,<br/>terminal-success, 1Click signature"]
+    end
+    subgraph FA["Solvador facilitator"]
+        SC["<b>@solvador/near-intents-facilitator</b><br/>MultichainExactScheme:<br/>verify (status + terms),<br/>settle (poll, receipt, idempotency ledger),<br/>GET …/quote (open),<br/>POST …/fund (optional EIP-3009 sponsorship)"]
+    end
+    CORE["<b>@solvador/near-intents-core</b><br/>oneclick: 1Click REST client (quote, status, submit, auth)<br/>eip3009: transferWithAuthorization build / recover, omft parsing<br/>receipt: oneclick-signed-status type<br/>tokens: /v0/tokens cache, amount math"]
+    ONE["1Click<br/>chaindefuser.com"]
+
+    CL --> CORE
+    RC --> CORE
+    SC --> CORE
+    CORE -->|HTTPS| ONE
 ```
 
 The split is deliberate:
@@ -104,34 +93,38 @@ The split is deliberate:
 
 Both paths funnel through the same three checks against a status fetched fresh from 1Click, never from the payload:
 
-```
-  parsePayload ──► GET /v0/status(depositAddress)          404 ──► UNKNOWN_DEPOSIT
-                         │
-                         ▼
-                   assertTerms: the quote's OWN recorded quoteRequest must satisfy
-                     recipient        == requirements.payTo        else WRONG_RECIPIENT
-                     destinationAsset == requirements.asset        else WRONG_ASSET
-                     swapType/amount  == EXACT_OUTPUT/amount       else WRONG_AMOUNT
-                     recipientType    ∈ {DESTINATION_CHAIN, INTENTS}
-                         │
-                         ▼
-                   assertTerminalSuccess (status state machine below)
+```mermaid
+flowchart TD
+    A["parsePayload: depositAddress"] --> B["GET /v0/status from 1Click<br/>never from the payload"]
+    B -->|404| E1["UNKNOWN_DEPOSIT"]
+    B --> C["assertTerms against the quote's<br/>OWN recorded quoteRequest"]
+    C -->|"recipient ≠ payTo"| E2["WRONG_RECIPIENT"]
+    C -->|"destinationAsset ≠ asset"| E3["WRONG_ASSET"]
+    C -->|"not EXACT_OUTPUT of amount"| E4["WRONG_AMOUNT"]
+    C -->|"recipientType invalid"| E5["TERMS_MISMATCH"]
+    C -->|"terms match"| D["assertTerminalSuccess<br/>state machine below"]
 ```
 
 `verify()` runs the checks once and answers with `payer = quoteRequest.refundTo`. `settle()` first hits the deposit ledger: a settled address returns the cached receipt, a concurrently settling one is rejected, otherwise the entry is locked and the scheme polls to a terminal status (default 90 s timeout, 3 s interval, terms re-asserted on every poll; an `originTxHash` in the payload is forwarded to `/v0/deposit/submit` first to speed detection). On `SUCCESS` it builds the `oneclick-signed-status` receipt (the verbatim status response plus 1Click's signature, the deposit address, and the merchant's payment id when present), records it, and returns it with the settling transaction hash.
 
 The status state machine, and what each state means to the scheme:
 
-```
-                     ┌─────────────── pending (retriable DEPOSIT_PENDING) ───────────────┐
-                     │                                                                   │
-   KNOWN_DEPOSIT_TX ──► PENDING_DEPOSIT ──► INCOMPLETE_DEPOSIT ──► PROCESSING            │
-                     │                                                  │                │
-                     └──────────────────────────────────────────────────┼────────────────┘
-                                                                        ▼
-                                          SUCCESS ──► settle: receipt issued
-                                          REFUNDED ─► DEPOSIT_REFUNDED (payer was made whole; unpaid)
-                                          FAILED ───► DEPOSIT_FAILED
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "pending, retriable DEPOSIT_PENDING" as pending {
+        KNOWN_DEPOSIT_TX
+        PENDING_DEPOSIT
+        INCOMPLETE_DEPOSIT
+        PROCESSING
+    }
+    [*] --> pending
+    pending --> SUCCESS
+    pending --> REFUNDED
+    pending --> FAILED
+    SUCCESS --> [*] : settle, receipt issued
+    REFUNDED --> [*] : DEPOSIT_REFUNDED, payer made whole, unpaid
+    FAILED --> [*] : DEPOSIT_FAILED
 ```
 
 Errors carry the shared taxonomy with an explicit `retriable` flag, so client SDKs branch on codes, not strings. `DEPOSIT_PENDING` is the only common retriable one: the payer simply presented the payment before delivery finished.
