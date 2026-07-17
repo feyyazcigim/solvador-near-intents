@@ -1,0 +1,28 @@
+{
+  "name": "near-intents-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Solvador NEAR Intents packages: near-intents-exact (public) + near-confidential (1Click) x402 scheme.",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "examples/near-intent-settlement"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"packages/*/test/**/*.test.ts\"",
+    "test:core": "node --import tsx --test \"packages/near-intents-core/test/**/*.test.ts\"",
+    "test:facilitator": "node --import tsx --test \"packages/near-intents-facilitator/test/**/*.test.ts\"",
+    "example": "node --import tsx examples/local-roundtrip.ts",
+    "demo": "node --import tsx examples/near-intent-settlement/server.ts",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

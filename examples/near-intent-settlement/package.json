@@ -1,0 +1,33 @@
+{
+  "name": "@solvador/near-intent-settlement",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Example x402 resource server + browser paywall for the `near-intents-exact` scheme: deposit USDC from Base into intents.near with a connected wallet, then unlock paid content settled to solvador.near — live on mainnet against the Solvador facilitator.",
+  "scripts": {
+    "start": "node --import tsx server.ts",
+    "dev": "node --import tsx --watch server.ts",
+    "client": "node --import tsx client.ts",
+    "build:web": "vite build web",
+    "dev:web": "vite web"
+  },
+  "dependencies": {
+    "@solvador/near-intents-core": "*",
+    "@solvador/near-receipt": "*",
+    "@solvador/x402-near-intents-client": "*",
+    "@x402/core": "^2.18.0",
+    "@x402/express": "^2.18.0",
+    "@x402/fetch": "^2.18.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "vite": "^6.0.0"
+  }
+}

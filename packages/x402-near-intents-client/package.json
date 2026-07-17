@@ -1,0 +1,20 @@
+{
+  "name": "@solvador/x402-near-intents-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Payer-side x402 scheme plugin for `near-intents-exact`: recognizes the scheme in accepts[], derives the intents account from the connected wallet, pre-checks balance, signs the MultiPayload (ERC-191 default), retries once on STALE_SALT.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --import tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.7",
+    "@solvador/near-intents-core": "*",
+    "@x402/core": "^2.18.0"
+  }
+}

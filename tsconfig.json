@@ -1,0 +1,9 @@
+{
+  "//": "Root typecheck program. Because each package's exports point at its TS source (the internal-packages pattern), cross-package imports resolve through the npm-workspace symlinks with no build step. `npm run typecheck` typechecks every package's src AND test in one pass.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "examples/**/*.ts"],
+  "exclude": ["examples/near-intent-settlement/web"]
+}
